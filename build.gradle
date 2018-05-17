@@ -1,0 +1,274 @@
+group = "org.queue"
+description "${description}"
+version "${version}"
+
+buildscript {
+    if (project.hasProperty("artifactory_contextUrl") &&
+        project.hasProperty("artifactory_user") &&
+        project.hasProperty("artifactory_password")) {
+
+        println("Adding artifactory repository: ${artifactory_contextUrl}")
+
+        repositories {
+            maven {
+                url "${artifactory_contextUrl}"
+                credentials {
+                    username = "${artifactory_user}"
+                    password = "${artifactory_password}"
+                }
+                name = "maven-main-cache"
+            }
+        }
+    } else {
+        println("No artifactory repository configured.")
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    //apply from: file('gradle/buildscript.gradle'), to: buildscript
+    repositories {
+        jcenter() // superset of mavenCentral(), with faster response times
+        maven { url "http://repo.spring.io/plugins-release" }
+        maven { url "http://repo.spring.io/milestone/" }
+        maven { url "http://repo.spring.io/libs-milestone" }
+        maven { url "https://plugins.gradle.org/m2/" }
+    }
+
+    dependencies {
+        classpath "com.netflix.nebula:gradle-lint-plugin:latest.release"
+        classpath "gradle.plugin.com.gorylenko.gradle-git-properties:gradle-git-properties:1.4.21"
+        classpath "io.franzbecker:gradle-lombok:1.11"
+        classpath "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
+        classpath "org.dm.gradle:gradle-bundle-plugin:+" //":0.10.0"
+        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4+"
+        classpath "org.junit.platform:junit-platform-gradle-plugin:1.1.1"
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.0.1.RELEASE"
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// apply from: file('gradle/application.gradle')
+apply plugin: 'application'
+
+// TODO: Figure out how to read this from gradle.properties
+// Specify:
+// mainClassName = "org.queue...Application"
+
+jar {
+    manifest {
+        attributes "Main-Class": "org.queue.morseTrainer.Application"
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/checkstyle.gradle')
+apply plugin: 'checkstyle'
+
+checkstyle {
+    toolVersion = "8.10"
+    ignoreFailures = true
+    configFile = rootProject.file('codequality/checkstyle.xml')
+}
+
+tasks.withType(Checkstyle) {
+    exclude '**/example*/*'
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/convention.gradle') // basic java tasks
+apply plugin: 'com.gorylenko.gradle-git-properties' // adds 'git.properties' to built jar file
+apply plugin: 'eclipse' // adds target to generate Eclipse's .project files
+apply plugin: 'idea' // adds support for IntelliJ
+apply plugin: 'io.spring.dependency-management' // permits not specifying version number on spring dependencies
+apply plugin: 'java' // Java
+apply plugin: 'project-report'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+compileJava.dependsOn(processResources)
+
+dependencyManagement {
+    imports { mavenBom("org.springframework.boot:spring-boot-dependencies:2.0.2.RELEASE") }
+}
+
+jar {
+    baseName = rootProject.name
+    version = version
+
+    exclude("**/examples/**")
+    // TODO: Figure out why these aren't getting set
+    manifest {
+        attributes "Implementation-Title": project.description
+        attributes "Implementation-Version": project.version
+    }
+
+    // make this a fat-jar
+    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+}
+
+javadoc {
+    destinationDir = file("${buildDir}/docs/javadoc/${version}/")
+    failOnError = false
+}
+
+processResources {
+    expand(project.properties)
+}
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+task listJars {
+    doLast {
+        configurations.compile.each { File file -> println file.name }
+    }
+}
+
+test {
+    forkEvery = 1
+    maxParallelForks = Runtime.runtime.availableProcessors()
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '4.7'
+}
+
+//////////////////////////////////////////////////////////////////////////////
+apply from: file('gradle/dependencies.gradle')
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/findbugs.gradle')
+apply plugin: 'findbugs'
+
+findbugs {
+    // Allow findbugs to run report but not stop build!
+    ignoreFailures = true
+}
+
+tasks.withType(FindBugs) {
+    reports {
+        xml.enabled false
+        html.enabled true
+        // html.stylesheet resources.text.fromFile('config/xsl/findbugs-custom.xsl')
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/jacoco.gradle')
+apply plugin: 'jacoco' // Java Code Coverage (for tests)
+
+jacoco {
+    toolVersion = "0.8.1"
+}
+
+jacocoTestReport {
+    group = "Reporting"
+    reports {
+        xml.enabled true
+        csv.enabled true
+        html.destination "${buildDir}/reports/coverage"
+    }
+}
+
+test {
+    finalizedBy jacocoTestReport
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/junit.gradle')
+// As of gradle 4.6, this is all that's needed to use junit 5.
+// https://docs.gradle.org/4.6/release-notes.html
+test {
+    useJUnitPlatform {
+        includeTags 'unit'
+    }
+}
+
+dependencies {
+    testCompile("org.junit.jupiter:junit-jupiter-api:5.1.0")
+    testRuntime("org.junit.jupiter:junit-jupiter-engine:5.1.0")
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/lint.gradle')
+apply plugin: 'nebula.lint'
+
+gradleLint {
+    alwaysRun = false
+
+    rules = []
+    rules += 'archaic-wrapper'
+    rules += 'duplicate-dependency-class'
+    rules += 'minimum-dependency-version'
+
+    // all-dependency = unused-dependency + overridden-dependency-version
+    // + unused-exclude-by-dep + unused-exclude-by-conf
+    rules += 'all-dependency'
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/lombok.gradle') // TODO: FIXME: This doesn't currently work as a separate script
+apply plugin: 'io.franzbecker.gradle-lombok'
+
+import io.franzbecker.gradle.lombok.task.DelombokTask
+
+lombok {
+    version = "1.16.20"
+    sha256 = ""
+}
+
+dependencies {
+    compileOnly("org.projectlombok:lombok:1.16.20")
+}
+
+task delombok(type: DelombokTask, dependsOn: compileJava) {
+    ext.outputDir = file("$buildDir/delombok/main")
+    outputs.dir(outputDir)
+    sourceSets.main.java.srcDirs.each {
+        inputs.dir(it)
+        args(it, "-d", outputDir)
+    }
+}
+
+task delombokTest(type: DelombokTask, dependsOn: compileTestJava) {
+    ext.outputDir = file("$buildDir/delombok/test")
+    outputs.dir(outputDir)
+    sourceSets.main.java.srcDirs.each {
+        inputs.dir(it)
+        args(it, "-d", outputDir)
+    }
+    sourceSets.test.java.srcDirs.each {
+        inputs.dir(it)
+        args(it, "-d", outputDir)
+    }
+}
+
+delombokTest.dependsOn delombok
+
+task delombokHelp(type: DelombokTask) {
+    args "--help"
+}
+
+javadoc {
+    dependsOn delombok
+    source = delombok.outputDir
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//apply from: file('gradle/repositories.gradle')
+repositories {
+    jcenter() // superset of mavenCentral(), with faster response times
+    maven { url "http://repo.spring.io/plugins-release" }
+    maven { url "http://repo.spring.io/milestone/" }
+    maven { url "http://repo.spring.io/libs-milestone/" }
+    if (buildscript.repositories.findByName("maven-main-cache")) {
+        add buildscript.repositories.getByName("maven-main-cache")
+    }
+    maven { url "https://jitpack.io" }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+mainClassName = "org.queue.morseTrainer.Application"

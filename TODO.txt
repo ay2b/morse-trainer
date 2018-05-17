@@ -1,0 +1,3 @@
+- add ability to adjust volume (post-download) of spoken words (mp3 files)
+- add progress bar to cache-only mode
+- add ability to specify cache directory
