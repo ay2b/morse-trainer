@@ -1,0 +1,26 @@
+# This file ensures proper line endings, for this repository
+
+# Set the default behavior, in case people don't have core.autocrlf set.
+* text=auto
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout.
+*.conf       text
+*.config     text
+*.css        text
+*.gradle     text
+*.html       text
+*.java       text
+*.js         text
+*.lua        text
+*.md         text
+*.properties text
+*.rb         text
+*.sh         text
+*.txt        text
+*.xml        text
+*.yaml       text
+*.yml        text
+
+# Declare files that will always have CRLF line endings on checkout.
+*.bat text eol=crlf
